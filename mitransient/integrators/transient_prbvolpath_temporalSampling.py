@@ -136,6 +136,7 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
         is_primal = mode == dr.ADMode.Primal
 
         max_subpath_depth = kwargs['end_opl']  # Max subdepth taking into account histogram's size
+        avg_vertex_path = mi.UInt32(10)                      # Average number of vertex per path within a volume
 
         ray = mi.Ray3f(ray)
         depth = mi.UInt32(0)                          # Depth of current vertex
@@ -186,6 +187,7 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
 
                 # Handle medium sampling and potential medium escape
                 u = sampler.next_1d(active_medium)
+                #mei = medium.sample_interaction_temporal(ray, u, channel, avg_vertex_path, max_subpath_depth, active_medium)
                 mei = medium.sample_interaction(ray, u, channel, active_medium)
                 mei.t = dr.detach(mei.t)
 
