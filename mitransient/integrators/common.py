@@ -165,6 +165,7 @@ class TransientADIntegrator(ADIntegrator):
                     sampler=sampler_i,
                     ray=ray,
                     depth=mi.UInt32(0),
+                    end_opl=film.end_opl(),
                     β=β_init(sensor, ray),
                     δL=None,
                     δaovs=None,

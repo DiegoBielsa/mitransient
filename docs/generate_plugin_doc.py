@@ -23,6 +23,7 @@ FILM_ORDERING = [
 INTEGRATOR_ORDERING = [
     'transientpath',
     'transient_prbvolpath',
+    'transient_prbvolpath_timeSampling',
     'transientnlospath',
     'common'
 ]
