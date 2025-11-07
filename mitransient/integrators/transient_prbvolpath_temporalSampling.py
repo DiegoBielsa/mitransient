@@ -176,12 +176,6 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
 
             # --------------------- Perform russian roulette --------------------
 
-            """q = dr.minimum(dr.max(mi.unpolarized_spectrum(β))
-                           * dr.square(η), 0.99)
-            perform_rr = (depth > self.rr_depth)
-            active &= (sampler.next_1d(active) < q) | ~perform_rr
-            β[perform_rr] = β * dr.rcp(q)"""
-
             active &= distance < max_subpath_depth
 
             active_medium = active & (medium != None)
