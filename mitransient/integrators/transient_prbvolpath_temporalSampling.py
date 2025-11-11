@@ -196,6 +196,14 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
                 intersect = needs_intersection & active_medium
                 si[intersect] = scene.ray_intersect(ray, intersect)
 
+                """## TODO: Angular Time Sampling
+                distance_to_target = si.t
+                ta = distance               # current distance
+                tb = max_subpath_depth      # total measured distance
+
+                # Check if between boundaries
+                active_phase_sampling = active_medium & (probabilidad y distancia entre boundaries)"""
+
                 needs_intersection &= ~active_medium
                 mei.t[active_medium & (si.t < mei.t)] = dr.inf
 
