@@ -136,7 +136,7 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
         is_primal = mode == dr.ADMode.Primal
 
         max_subpath_depth = kwargs['end_opl']  # Max subdepth taking into account histogram's size
-        avg_vertex_path = mi.UInt32(10)                      # Average number of vertex per path within a volume
+        avg_vertex_path = mi.UInt32(4)                      # Average number of vertex per path within a volume
         prob_angular_time_sampling = mi.UInt32(1.)
 
         theta = dr.zeros(mi.Float)
@@ -193,8 +193,8 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
 
                 # Handle medium sampling and potential medium escape
                 u = sampler.next_1d(active_medium)
-                #mei = medium.sample_interaction_temporal(ray, u, channel, avg_vertex_path, max_subpath_depth, active_medium)
-                mei = medium.sample_interaction(ray, u, channel, active_phase_sampling)
+                mei = medium.sample_interaction_temporal(ray, u, channel, avg_vertex_path, max_subpath_depth, active_medium)
+                #mei = medium.sample_interaction(ray, u, channel, active_phase_sampling)
                 mei.t = dr.detach(mei.t)
 
                 ray.maxt[active_medium & medium.is_homogeneous() &
@@ -202,7 +202,8 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
                 intersect = needs_intersection & active_medium
                 si[intersect] = scene.ray_intersect(ray, intersect)
 
-                ## TODO: Angular Time Sampling
+                ########################## TODO: Angular Time Sampling #########################
+
                 phase_ctx = mi.PhaseFunctionContext(sampler)
                 phase = mei.medium.phase_function()
                 phase[~active_medium] = dr.zeros(mi.PhaseFunctionPtr)
@@ -250,7 +251,7 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
                 needs_intersection |= active_angular_sampling
                 last_scatter_direction_pdf[active_angular_sampling] = phase_angular_pdf
 
-                ## END TODO: Angular Time Sampling
+                ######################### END TODO: Angular Time Sampling #########################
 
                 needs_intersection &= ~active_medium
                 mei.t[active_medium & (si.t < mei.t)] = dr.inf
