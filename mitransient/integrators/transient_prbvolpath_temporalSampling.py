@@ -136,7 +136,12 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
         is_primal = mode == dr.ADMode.Primal
 
         max_subpath_depth = kwargs['end_opl']  # Max subdepth taking into account histogram's size
-        avg_vertex_path = mi.UInt32(10)                      # Average number of vertex per path within a volume
+        avg_vertex_path = mi.UInt32(4)                      # Average number of vertex per path within a volume
+        prob_angular_time_sampling = mi.UInt32(1.)
+
+        theta = dr.zeros(mi.Float)
+        phi = dr.zeros(mi.Float)
+        angular_dirs = dr.zeros(mi.Vector3f)
 
         ray = mi.Ray3f(ray)
         depth = mi.UInt32(0)                          # Depth of current vertex
@@ -180,6 +185,7 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
             active &= distance < max_subpath_depth
 
             active_medium = active & (medium != None)
+            active_phase_sampling = active_medium
             active_surface = active & ~active_medium
 
             with dr.resume_grad(when=not is_primal):
@@ -187,8 +193,8 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
 
                 # Handle medium sampling and potential medium escape
                 u = sampler.next_1d(active_medium)
-                #mei = medium.sample_interaction_temporal(ray, u, channel, avg_vertex_path, max_subpath_depth, active_medium)
-                mei = medium.sample_interaction(ray, u, channel, active_medium)
+                mei = medium.sample_interaction_temporal(ray, u, channel, avg_vertex_path, max_subpath_depth, active_medium)
+                #mei = medium.sample_interaction(ray, u, channel, active_phase_sampling)
                 mei.t = dr.detach(mei.t)
 
                 ray.maxt[active_medium & medium.is_homogeneous() &
@@ -196,13 +202,56 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
                 intersect = needs_intersection & active_medium
                 si[intersect] = scene.ray_intersect(ray, intersect)
 
-                """## TODO: Angular Time Sampling
-                distance_to_target = si.t
+                ########################## TODO: Angular Time Sampling #########################
+
+                phase_ctx = mi.PhaseFunctionContext(sampler)
+                phase = mei.medium.phase_function()
+                phase[~active_medium] = dr.zeros(mi.PhaseFunctionPtr)
+
                 ta = distance               # current distance
                 tb = max_subpath_depth      # total measured distance
 
-                # Check if between boundaries
-                active_phase_sampling = active_medium & (probabilidad y distancia entre boundaries)"""
+                # Check if between boundaries and probability
+                active_angular_sampling = active_medium \
+                                    & (sampler.next_1d(active_medium) < prob_angular_time_sampling) \
+                                    & ((ta + mei.t) < tb)
+                active_phase_sampling = active_medium & ~active_angular_sampling
+
+                theta[active_angular_sampling] = (sampler.next_1d(active_angular_sampling) * (tb - ta) + ta)
+                phi[active_angular_sampling] = 2. * dr.pi * sampler.next_1d(active_angular_sampling)
+                dir_x = dr.cos(phi) * dr.sin(theta)
+                dir_y = dr.cos(theta)
+                dir_z = dr.sin(phi) * dr.sin(theta)
+
+                angular_dirs[active_angular_sampling] = mi.Vector3f(
+                                                            dir_x[active_angular_sampling],
+                                                            dir_y[active_angular_sampling],
+                                                            dir_z[active_angular_sampling]
+                                                        )
+                
+                new_omega_i = si.to_local(angular_dirs[active_angular_sampling]) # transformar a locales
+
+                phase_angular_eval, phase_angular_pdf = mei.medium.phase_function().eval_pdf(
+                        phase_ctx, mei, new_omega_i, active_angular_sampling)
+                
+                valid_ray |= active_angular_sampling
+                active_angular_sampling &= phase_angular_pdf > 0.0
+
+                if dr.hint(not is_primal and dr.grad_enabled(phase_angular_eval), mode='scalar'):
+                    Lo = phase_angular_eval * \
+                        dr.detach(dr.select(active_angular_sampling, L /
+                                  dr.maximum(1e-8, phase_angular_eval), 0.0))
+                    if mode == dr.ADMode.Backward:
+                        dr.backward_from(δL * Lo)
+                    else:
+                        δL += dr.forward_to(Lo)
+
+                β[active_angular_sampling] *= 1.
+                ray[active_angular_sampling] = mei.spawn_ray(new_omega_i)
+                needs_intersection |= active_angular_sampling
+                last_scatter_direction_pdf[active_angular_sampling] = phase_angular_pdf
+
+                ######################### END TODO: Angular Time Sampling #########################
 
                 needs_intersection &= ~active_medium
                 mei.t[active_medium & (si.t < mei.t)] = dr.inf
@@ -341,32 +390,32 @@ class TransientPRBVolpathIntegratorTimeSampling(TransientADIntegrator):
 
                 # -------------------- Phase function sampling ------------------
 
-                valid_ray |= act_medium_scatter
+                valid_ray |= active_phase_sampling
                 with dr.suspend_grad():
                     wo, phase_weight, phase_pdf = phase.sample(phase_ctx, mei,
                                                                sampler.next_1d(
-                                                                   act_medium_scatter),
+                                                                   active_phase_sampling),
                                                                sampler.next_2d(
-                                                                   act_medium_scatter),
-                                                               act_medium_scatter)
-                act_medium_scatter &= phase_pdf > 0.0
+                                                                   active_phase_sampling),
+                                                               active_phase_sampling)
+                active_phase_sampling &= phase_pdf > 0.0
 
                 # Re evaluate the phase function value in an attached manner
                 phase_eval, _ = phase.eval_pdf(
-                    phase_ctx, mei, wo, act_medium_scatter)
+                    phase_ctx, mei, wo, active_phase_sampling)
                 if dr.hint(not is_primal and dr.grad_enabled(phase_eval), mode='scalar'):
                     Lo = phase_eval * \
-                        dr.detach(dr.select(act_medium_scatter, L /
+                        dr.detach(dr.select(active_phase_sampling, L /
                                   dr.maximum(1e-8, phase_eval), 0.0))
                     if mode == dr.ADMode.Backward:
                         dr.backward_from(δL * Lo)
                     else:
                         δL += dr.forward_to(Lo)
 
-                β[act_medium_scatter] *= phase_weight
-                ray[act_medium_scatter] = mei.spawn_ray(wo)
-                needs_intersection |= act_medium_scatter
-                last_scatter_direction_pdf[act_medium_scatter] = phase_pdf
+                β[active_phase_sampling] *= phase_weight
+                ray[active_phase_sampling] = mei.spawn_ray(wo)
+                needs_intersection |= active_phase_sampling
+                last_scatter_direction_pdf[active_phase_sampling] = phase_pdf
 
                 # ------------------------ BSDF sampling -----------------------
 
